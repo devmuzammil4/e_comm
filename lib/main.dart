@@ -49,7 +49,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
   void _startTimeout() {
     // 3 second ka timer chalana login screen par jaane ke liye
-    _splashTimer = Timer(const Duration(seconds: 3), _navigateToNextScreen);
+    _splashTimer = Timer(const Duration(seconds: 4), _navigateToNextScreen);
   }
 
   void _navigateToNextScreen() {
