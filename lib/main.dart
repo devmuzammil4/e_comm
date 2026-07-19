@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:e_comm/login_screen.dart';
+import 'package:e_comm/core/injection_container.dart'as di;
 
 void main() {
   // Global asynchronous errors ko catch karne ke liye safety zone wrapper

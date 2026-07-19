@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:e_comm/domain/entities/product_entity.dart';
-import 'package:e_comm/domain/repositories/product_repositories.dart';
+import 'package:e_comm/domain/repository/product_repositories.dart';
 import 'package:e_comm/data/models/product_remote.dart';
 import 'package:e_comm/data/models/product_model.dart';
 
