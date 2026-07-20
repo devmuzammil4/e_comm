@@ -1,243 +1,117 @@
-import 'dart:async';
-import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:e_comm/login_screen.dart';
-import 'package:e_comm/core/injection_container.dart'as di;
+import 'package:provider/provider.dart'; // Added: State management support
+import 'core/config/app_config.dart';
+import 'core/di/injection_container.dart';
+import 'core/theme/dynamic_theme_factory.dart';
+import 'features/presentation/di/catalog_dependencies.dart';
+import 'features/presentation/pages/product_catalog_page.dart';
+import 'features/cart/presentation/di/cart_dependencies.dart';
 
-void main() {
-  // Global asynchronous errors ko catch karne ke liye safety zone wrapper
-  runZonedGuarded(() async {
-    // Native engine channels aur plugins ko run hone se pehle initialize karna lazmi hai
-    WidgetsFlutterBinding.ensureInitialized();
+// Auth Integration Imports (Paths ko apne folder structure ke mutabiq check kar lein)
+import 'features/auth/presentation/providers/auth_provider.dart';
 
-    // Flutter UI layer/rendering tree mein aane wale exceptions ka interceptor
-    FlutterError.onError = (FlutterErrorDetails details) {
-      FlutterError.presentError(details);
-    };
+void main() async {
+  // Enforces engine execution bindings are properly linked prior to initial boot procedures
+  WidgetsFlutterBinding.ensureInitialized();
 
-    // Native platform level background tasks aur isolates ke crashes ko handle karne ka mechanism
-    PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
-      debugPrint('Platform Error Catch Hua: $error');
-      return true; // True batata hai ke crash handle ho chuka hai aur app dead nahi karni
-    };
+  // ---------------------------------------------------------------------------
+  // 1. Set Your Running Tenant Target Profile Here (Compile-Time Flag Configuration)
+  // ---------------------------------------------------------------------------
+  const BusinessTenantType activeTenantTarget = BusinessTenantType.sports;
 
-    // Production build mein framework ke crash hone par custom UI replacement trigger
-    ErrorWidget.builder = (FlutterErrorDetails details) {
-      return const GlobalErrorScreen();
-    };
+  // ---------------------------------------------------------------------------
+  // 2. Multi-Tenant Service Isolation Bootstrapping
+  // ---------------------------------------------------------------------------
+  // Initializing base core shared dependencies infrastructure
+  await initializeDependencies(activeTenantTarget);
 
-    runApp(const MyApp());
-  }, (Object error, StackTrace stackTrace) {
-    // Kisi bhi kism ka bacha kucha uncaught error yahan zone boundary par catch hoga
-    debugPrint('Zoned Exception: $error');
-  });
+  // Initializing segregated auth module dependencies onto the service map
+  initAuthDependencies(sl);
+
+  // Initializing segregated catalog feature module dependencies onto the service map
+  initCatalogDependencies(sl);
+
+  // Initializing our polymorphic cart engine into memory registers completely
+  initCartDependencies(sl);
+
+  // Initializing app shell execution run loop
+  runApp(const MultiTenantAppCoreShell());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+/// Core Material Wrapper Shell isolating adaptive themes and layout trees cleanly.
+class MultiTenantAppCoreShell extends StatelessWidget {
+  const MultiTenantAppCoreShell({super.key});
 
   @override
   Widget build(BuildContext context) {
-    // Top-level dependency injection tree jahan saare feature providers register hote hain
+    // Resolving dynamic configuration models out of isolated service pointer references
+    final AppConfig config = sl<AppConfig>();
+
     return MultiProvider(
-      providers : [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+      providers: [
+        // Injecting AuthProvider and instantly triggering session restoration on bootup
+        ChangeNotifierProvider<AuthProvider>(
+          create: (_) => sl<AuthProvider>()..checkExistingSession(),
+        ),
+        // Aap yahan apna CartProvider ya baqi tenant providers bhi register kar sakte hain:
+        // ChangeNotifierProvider<CartProvider>(create: (_) => sl<CartProvider>()),
       ],
-      // Dynamic listener framework jo notifications par child nodes ko rebuild karta hai
-      child : Consumer <ThemeProvider>(
-          builder : (context, themeProvider , child) {
-            return MaterialApp(
-              debugShowCheckedModeBanner: false,
-              title: 'E-Commerce Enterprise',
-              // Dynamic configuration routing switch for light/dark theme tracking
-              themeMode: themeProvider.currentTheme,
-              theme: ThemeData(
-                useMaterial3: true,
-                brightness: Brightness.light,
-                colorScheme: ColorScheme.fromSeed(
-                  seedColor: Colors.purple,
-                  brightness: Brightness.light,
-                ),
+      child: MaterialApp(
+        title: config.appTitle,
+        debugShowCheckedModeBanner: false,
+
+        // Factory theme compilation rules matching your structural target models directly
+        theme: DynamicThemeFactory.createTheme(config.tenantType),
+
+        // Root gateway controller management layer
+        home: const AuthGate(),
+      ),
+    );
+  }
+}
+
+/// Clean Architecture Auth Gate that monitors runtime session updates
+class AuthGate extends StatelessWidget {
+  const AuthGate({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<AuthProvider>(
+      builder: (context, authProvider, _) {
+        switch (authProvider.status) {
+          case AuthStateStatus.loading:
+          case AuthStateStatus.initial:
+            return const Scaffold(
+              body: Center(
+                child: CircularProgressIndicator(), // Tenant theme native loader
               ),
-              darkTheme: ThemeData(
-                useMaterial3: true,
-                brightness: Brightness.dark,
-                colorScheme: ColorScheme.fromSeed(
-                  seedColor: Colors.purple,
-                  brightness: Brightness.dark,
-                ),
-              ),
-              home: const SplashScreen(),
             );
-          }
-      ),
+          case AuthStateStatus.authenticated:
+          // Session validated successfully -> Open tenant catalogs directly
+            return const ProductCatalogPage();
+          case AuthStateStatus.unauthenticated:
+          case AuthStateStatus.error:
+          default:
+          // Session failure or missing -> Enforce login screen route boundary
+            return const LoginScreen(); // Replace with your actual LoginScreen widget
+        }
+      },
     );
   }
 }
 
-class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
-
-  @override
-  State<SplashScreen> createState() => _SplashScreenState();
-}
-
-class _SplashScreenState extends State<SplashScreen> {
-  // Memory leaks se bachne ke liye lifecycle context tracking resource pointer
-  Timer? _splashTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    _startTimeout();
-  }
-
-  void _startTimeout() {
-    // 4 second ka safe timer fallback strategy sequence execution
-    _splashTimer = Timer(const Duration(seconds: 4), _navigateToNextScreen);
-  }
-
-  void _navigateToNextScreen() {
-    // Context lifecycle safety check taake screen background par leak na ho
-    if (!mounted) return;
-
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (context) => const LoginScreen()),
-    );
-  }
-
-  @override
-  void dispose() {
-    // Active thread callbacks ki clean implementation aur resources storage flush
-    _splashTimer?.cancel();
-    super.dispose();
-  }
-
+// Temporary Placeholder for compilation safety (Inko real UI views se replace karein)
+class LoginScreen extends StatelessWidget {
+  const LoginScreen({super.key});
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
-      backgroundColor: Colors.blue,
+    return Scaffold(
       body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              "Loading...",
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: Colors.white,
-              ),
-            ),
-            SizedBox(height: 16),
-            CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-            ),
-          ],
+        child: ElevatedButton(
+          onPressed: () => context.read<AuthProvider>().login('customer@tenant.com', 'securePass'),
+          child: const Text('Simulate Login to Catalog'),
         ),
       ),
     );
-  }
-}
-
-class GlobalErrorScreen extends StatelessWidget {
-  const GlobalErrorScreen({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(
-                  Icons.error_outline_rounded,
-                  color: Colors.redAccent,
-                  size: 64,
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  "Something Went Wrong",
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  "We are fixing this issue. Please try restarting the app.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                ElevatedButton(
-                  onPressed: () {},
-                  child: const Text("Retry"),
-                )
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ==================== THEME PROVIDER STATE MACHINE ====================
-class ThemeProvider extends ChangeNotifier {
-  // Private variable for core encapsulation guidelines management
-  bool _isDarkMode = false;
-
-  // External interface layer reading pipe gateway getter
-  bool get isDarkMode => _isDarkMode;
-  // Dynamic calculation token mapping theme object enum data standard
-  ThemeMode get currentTheme => _isDarkMode ? ThemeMode.dark : ThemeMode.light;
-
-  void toggleTheme() {
-    _isDarkMode = !_isDarkMode; // Values invert mapping shortcut expression
-    notifyListeners();          // Pure application render loop model update propagation signal
-  }
-}
-
-// ==================== AUTH STATUS ENUM ====================
-// Type-safe workflow classification options tracking variable index standard
-enum AuthStatus { initial, loading, authenticated, unauthenticated }
-
-// ==================== AUTH PROVIDER STATE MACHINE ====================
-class AuthProvider extends ChangeNotifier {
-  AuthStatus _status = AuthStatus.initial;
-
-  AuthStatus get status => _status;
-  // Inline shorthand verification variables calculation optimization flags
-  bool get isLoading => _status == AuthStatus.loading;
-  bool get isAuthenticated => _status == AuthStatus.authenticated;
-
-  Future<void> checkAuthStatus() async {
-    // Network channel interface data fetching simulator delay latency trace
-    await Future.delayed(const Duration(seconds: 2));
-    _status = AuthStatus.unauthenticated;
-    notifyListeners();
-  }
-
-  void loginSuccess() {
-    _status = AuthStatus.authenticated;
-    notifyListeners();
-  }
-
-  void logout() {
-    _status = AuthStatus.unauthenticated;
-    notifyListeners();
   }
 }

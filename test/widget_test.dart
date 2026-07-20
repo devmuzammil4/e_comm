@@ -1,30 +1,23 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:e_comm/main.dart';
+import 'package:e_comm/core/config/app_config.dart';
+import 'package:e_comm/core/di/injection_container.dart';
+import 'package:e_comm/features/presentation/di/catalog_dependencies.dart';
+import 'package:e_comm/features/presentation/pages/product_catalog_page.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('App Shell Core Boot Integration Test', (WidgetTester tester) async {
+    // 1. Initializing isolated testing boundaries for dependency maps prior to view attachment
+    if (sl.isRegistered<AppConfig>()) await sl.reset();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    // Setting up clear default runtime flavor settings matching your core profile definitions
+    await initializeDependencies(BusinessTenantType.sports);
+    initCatalogDependencies(sl);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    // 2. Boots the actual multi-tenant framework window tree into the simulator canvas
+    await tester.pumpWidget(const MultiTenantAppCoreShell());
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // 3. Verifies that the primary adaptive shell loaded the target view template correctly
+    expect(find.byType(ProductCatalogPage), findsOneWidget);
   });
 }
